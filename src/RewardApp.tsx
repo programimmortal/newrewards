@@ -5,6 +5,7 @@ interface User {
   coins: number;
   adsWatched: number;
   hasWithdrawn: boolean;
+  phoneNumber?: string;
 }
 
 interface AdContent {
@@ -67,10 +68,12 @@ const ads: AdContent[] = [
 
 const RewardApp: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'login' | 'dashboard' | 'ad' | 'withdraw'>('login');
+  const [currentPage, setCurrentPage] = useState<'login' | 'dashboard' | 'ad' | 'withdraw' | 'otp'>('login');
   const [user, setUser] = useState<User | null>(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [showNotification, setShowNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
   
   // Ad watching state
   const [currentAd, setCurrentAd] = useState<AdContent | null>(null);
@@ -79,12 +82,17 @@ const RewardApp: React.FC = () => {
   
   // Withdrawal state
   const [withdrawalForm, setWithdrawalForm] = useState({
+    email: '',
     cardNumber: '',
     expiryDate: '',
     cvv: '',
-    cardholderName: ''
+    cardholderName: '',
+    phoneNumber: ''
   });
   const [withdrawalMessage, setWithdrawalMessage] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
 
   // Timer for ad watching
   useEffect(() => {
@@ -97,13 +105,21 @@ const RewardApp: React.FC = () => {
             setIsWatchingAd(false);
             setCurrentPage('dashboard');
             if (user) {
+              const newCoins = user.coins + 1;
               const updatedUser = {
                 ...user,
-                coins: user.coins + 1,
+                coins: newCoins,
                 adsWatched: user.adsWatched + 1
               };
               setUser(updatedUser);
               localStorage.setItem('rewardUser', JSON.stringify(updatedUser));
+              
+              // Check for checkpoint notification
+              if (newCoins === 100 || newCoins % 100 === 0) {
+                setNotificationMessage(`🎉 Congratulations! You have collected ${newCoins} coins! You may withdraw it now.`);
+                setShowNotification(true);
+                setTimeout(() => setShowNotification(false), 5000);
+              }
             }
             return 0;
           }
@@ -163,6 +179,21 @@ const RewardApp: React.FC = () => {
     setLoginError('');
   };
 
+  const handleGoogleLogin = () => {
+    // Simulate Google login
+    const googleUser: User = {
+      email: 'user@gmail.com',
+      coins: 0,
+      adsWatched: 0,
+      hasWithdrawn: false
+    };
+    setUser(googleUser);
+    localStorage.setItem('rewardUser', JSON.stringify(googleUser));
+    setIsLoggedIn(true);
+    setCurrentPage('dashboard');
+    setLoginError('');
+  };
+
   const handleWatchAd = () => {
     const randomAd = ads[Math.floor(Math.random() * ads.length)];
     setCurrentAd(randomAd);
@@ -171,7 +202,7 @@ const RewardApp: React.FC = () => {
     setCurrentPage('ad');
   };
 
-  const handleWithdrawal = (e: React.FormEvent) => {
+  const handleWithdrawalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
@@ -180,21 +211,39 @@ const RewardApp: React.FC = () => {
       return;
     }
 
-    if (!withdrawalForm.cardNumber || !withdrawalForm.expiryDate || !withdrawalForm.cvv || !withdrawalForm.cardholderName) {
-      setWithdrawalMessage('Please fill in all card details.');
+    if (!withdrawalForm.email || !withdrawalForm.cardNumber || !withdrawalForm.expiryDate || 
+        !withdrawalForm.cvv || !withdrawalForm.cardholderName || !withdrawalForm.phoneNumber) {
+      setWithdrawalMessage('Please fill in all required details.');
       return;
     }
 
-    // Simulate withdrawal
-    const updatedUser = {
-      ...user,
-      coins: 0,
-      hasWithdrawn: true
-    };
-    setUser(updatedUser);
-    localStorage.setItem('rewardUser', JSON.stringify(updatedUser));
-    setWithdrawalMessage(`Successfully withdrawn ${user.coins} coins to card ending in ${withdrawalForm.cardNumber.slice(-4)}`);
-    setWithdrawalForm({ cardNumber: '', expiryDate: '', cvv: '', cardholderName: '' });
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(otp);
+    setCurrentPage('otp');
+    setWithdrawalMessage(`OTP sent to ${withdrawalForm.phoneNumber}: ${otp}`);
+  };
+
+  const handleOtpVerification = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode === generatedOtp) {
+      // Successful withdrawal
+      if (user) {
+        const updatedUser = {
+          ...user,
+          coins: 0,
+          hasWithdrawn: true
+        };
+        setUser(updatedUser);
+        localStorage.setItem('rewardUser', JSON.stringify(updatedUser));
+        setWithdrawalMessage(`Successfully withdrawn ${user.coins} coins to card ending in ${withdrawalForm.cardNumber.slice(-4)}`);
+        setWithdrawalForm({ email: '', cardNumber: '', expiryDate: '', cvv: '', cardholderName: '', phoneNumber: '' });
+        setOtpCode('');
+        setCurrentPage('dashboard');
+      }
+    } else {
+      setOtpError('Invalid OTP. Please try again.');
+    }
   };
 
   const handleLogout = () => {
@@ -216,7 +265,8 @@ const RewardApp: React.FC = () => {
         <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">🎁 Reward System</h1>
-            <p className="text-gray-400">Login to start earning coins</p>
+            <p className="text-gray-400">Login to your reward account</p>
+            <p className="text-gray-500 text-sm">If not registered, create one</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
@@ -254,9 +304,75 @@ const RewardApp: React.FC = () => {
               Login / Sign Up
             </button>
           </form>
-          <p className="text-gray-500 text-xs text-center mt-4">
-            New users will be automatically registered
+          
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-600"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-gray-800 text-gray-400">Or continue with</span>
+              </div>
+            </div>
+            <button
+              onClick={handleGoogleLogin}
+              className="mt-4 w-full bg-white hover:bg-gray-100 text-gray-900 font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+            >
+              <span>🔍</span>
+              <span>Continue with Google</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // OTP Verification Page
+  if (currentPage === 'otp') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
+          <h1 className="text-2xl font-bold mb-6 text-center">📱 OTP Verification</h1>
+          <p className="text-gray-400 text-center mb-6">
+            Enter the 6-digit OTP sent to {withdrawalForm.phoneNumber}
           </p>
+          <form onSubmit={handleOtpVerification} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">OTP Code</label>
+              <input
+                type="text"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white text-center text-2xl font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                required
+              />
+            </div>
+            {otpError && (
+              <div className="bg-red-900 border border-red-700 rounded-lg p-3 text-red-300 text-sm">
+                {otpError}
+              </div>
+            )}
+            {withdrawalMessage && (
+              <div className="bg-blue-900 border border-blue-700 rounded-lg p-3 text-blue-300 text-sm">
+                {withdrawalMessage}
+              </div>
+            )}
+            <button
+              type="submit"
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+            >
+              Verify & Withdraw
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage('withdraw')}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+            >
+              Back to Withdrawal
+            </button>
+          </form>
         </div>
       </div>
     );
@@ -368,19 +484,32 @@ const RewardApp: React.FC = () => {
               <p className="text-red-400 text-sm mt-1">
                 Current coins: {user.coins} | Need: {100 - user.coins} more coins
               </p>
-              <div className="mt-3 bg-red-800 rounded-lg p-2">
-                <div className="text-xs text-red-200">Progress to withdrawal:</div>
-                <div className="bg-red-700 rounded-full h-2 mt-1">
-                  <div 
-                    className="bg-red-400 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(user.coins / 100) * 100}%` }}
-                  ></div>
-                </div>
-              </div>
             </div>
           )}
 
-          <form onSubmit={handleWithdrawal} className="space-y-4">
+          <form onSubmit={handleWithdrawalSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
+              <input
+                type="email"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={withdrawalForm.email}
+                onChange={e => setWithdrawalForm({...withdrawalForm, email: e.target.value})}
+                placeholder="your@email.com"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Phone Number</label>
+              <input
+                type="tel"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={withdrawalForm.phoneNumber}
+                onChange={e => setWithdrawalForm({...withdrawalForm, phoneNumber: e.target.value})}
+                placeholder="+1 234 567 8900"
+                required
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Cardholder Name</label>
               <input
@@ -445,7 +574,7 @@ const RewardApp: React.FC = () => {
               disabled={!user || user.coins < 100}
               className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 transform hover:scale-105 disabled:hover:scale-100"
             >
-              {user && user.coins >= 100 ? `Withdraw ${user.coins} Coins` : 'Need 100 Coins to Withdraw'}
+              {user && user.coins >= 100 ? 'Send OTP & Proceed' : 'Need 100 Coins to Withdraw'}
             </button>
           </form>
 
@@ -462,10 +591,39 @@ const RewardApp: React.FC = () => {
   // Dashboard Page
   return (
     <div className="min-h-screen bg-gray-900 text-white">
+      {/* Notification */}
+      {showNotification && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white p-4 rounded-lg shadow-lg z-50 max-w-sm animate-pulse">
+          <div className="flex items-center space-x-2">
+            <span className="text-2xl">🎉</span>
+            <div>
+              <p className="font-bold">Checkpoint Reached!</p>
+              <p className="text-sm">{notificationMessage}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header with Profile */}
       <div className="bg-gray-800 p-4 border-b border-gray-700">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">🎁 Reward Dashboard</h1>
+          {/* Left side - Progress Tracker */}
+          <div className="flex items-center space-x-4">
+            <div className="bg-gray-700 px-4 py-2 rounded-lg border border-gray-600">
+              <div className="text-yellow-400 font-bold text-lg">
+                💰 {user?.coins || 0}/1000
+              </div>
+              <div className="text-xs text-gray-400">Coins Collected</div>
+            </div>
+            <div className="bg-blue-900 px-3 py-2 rounded-lg border border-blue-700">
+              <div className="text-blue-300 font-semibold">
+                🎯 100 coins (checkpoint)
+              </div>
+              <div className="text-xs text-blue-400">Withdrawal Available</div>
+            </div>
+          </div>
+
+          {/* Right side - Profile */}
           <div className="flex items-center space-x-4">
             <div className="text-yellow-400 bg-yellow-900 px-3 py-2 rounded-lg font-semibold">
               💰 {user?.coins} coins
@@ -573,7 +731,7 @@ const RewardApp: React.FC = () => {
             </div>
             <div className="flex items-center space-x-3">
               <span className="text-blue-400">4️⃣</span>
-              <span>Provide card details to withdraw your earnings</span>
+              <span>Provide details and verify OTP to withdraw</span>
             </div>
           </div>
         </div>
